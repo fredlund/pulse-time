@@ -1,0 +1,22 @@
+pulse_time is a user-level scheduler built on top of PULSE for executing
+Erlang programs, with a special focus on handling timed programs well.
+
+Installation instructions are in the file INSTALLATION, the licence conditions
+are described in LICENCE. A few examples are in the examples directory.
+Once the tool has been installed, it is possible to run e.g. the 
+Fischer example (Fischer's mutual exclusion algorithm) in the following manner
+located in this directory (note that a QuickCheck installation is required too):
+
+$ erl -pa ebin -pa examples/ebin
+
+1> fischer_qc:test().
+Starting Quviq QuickCheck version 1.30.3
+   (compiled at {{2014,1,9},{7,22,19}})
+Licence for University UPM Madrid reserved until {{2014,1,28},{12,33,4}}
+Trying configuration 1,3,1
+...
+
+For further questions or suggestions please send an email to lfredlund@fi.upm.es
+
+
+

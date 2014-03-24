@@ -1,0 +1,49 @@
+PULSE_TIME_VERSION = @PACKAGE_VERSION@
+
+vpath %.erl src examples
+
+BEAMS = $(patsubst src/%.erl,ebin/%.beam,$(wildcard src/*.erl))
+EFLAGS = +debug_info -D PULSE_TIME_VERSION=\"$(PULSE_TIME_VERSION)\"
+
+all: ebin main
+
+main: ${BEAMS}
+
+ebin:
+	mkdir -p ebin
+
+ebin/%.beam: %.erl
+	erlc $(EFLAGS) -o ebin $<
+
+examples: examples/ebin examples/ebin/fischer_qc.beam examples/ebin/elevator_qc.beam
+
+examples/ebin:
+	mkdir -p examples/ebin
+
+examples/ebin/fischer_qc.beam: examples/fischer_qc.erl
+	erlc $(EFLAGS) -o examples/ebin examples/fischer_qc.erl
+
+examples/ebin/elevator_qc.beam: examples/elevator_qc.erl
+	erlc $(EFLAGS) -o examples/ebin examples/elevator_qc.erl
+
+dialyzer: 
+	dialyzer ebin/*beam
+
+docs:
+	make edoc
+
+edoc: 
+	mkdir -p doc/doc
+	cp doc/overview.edoc doc/doc
+	erl -noshell -run edoc_run files '["src/pulse_time_instrument.erl","src/pulse_time_scheduler.erl"]' '[{sort_functions,false},{dir,"doc/doc"}]'
+
+$(DOCDIR)/%.html: %.erl
+	erl -noshell -run edoc_run file '"$<"' '[{sort_functions,false},{dir,"$(DOCDIR)"}]'
+
+release: main docs examples
+	@ scripts/mkrelease "." release $(PULSE_TIME_VERSION)
+
+clean:
+	rm -f ebin/*.beam examples/ebin/*.beam
+
+
