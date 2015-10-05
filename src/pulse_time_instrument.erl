@@ -363,7 +363,7 @@ instrument_receive(Term) ->
 
     case timeout(Term) of
         infinity ->
-            Timeout = scheduler('after', []),
+            _Timeout = scheduler('after', []),
             Call = fun(Fun) -> scheduler(receiving, [Fun]) end;
         N ->
             Timeout = 

@@ -60,11 +60,13 @@
   , schedule = random
   , log      = []
   , events   = events
+  , really_wait = true
   , verbose  = true
   }).
 
 -type option() :: 'infinitely_fast' | 'infinitely_slow' | 'time_random' 
                 | {'quite_slow',integer()} | {'quite_slow_random',integer()}
+		| {'really_wait',boolean()}
 		| {'timeParms',[time_option()]}
 		| {'verbose',boolean()}
                 | {'seed',{integer(),integer(),integer()}}
@@ -145,6 +147,9 @@ spawn_link(NameHint, Fun) ->
 spawn_link(NameHint,M,F,Args) ->
   ?MODULE:spawn(NameHint,fun () -> apply(M,F,Args) end).
 
+spawn(NameHint,M,F,Args) ->
+  ?MODULE:spawn(NameHint,fun () -> apply(M,F,Args) end).
+
 timestamp() ->
   ?MODULE:now().
 
@@ -217,7 +222,11 @@ send(Pid,Msg) when is_atom(Pid) ->
   send(whereis(Pid),Msg);
 
 send(Pid,Msg) ->
-  ?MODULE ! {send, Pid, Msg},
+  try ?MODULE ! {send, Pid, Msg}
+  catch _:_ ->
+	  io:format("Warning: could not send message ~p to pulse~n",
+		    [Msg])
+  end,
   Msg.
 
 % to be used around a receive statement without "after 0"
@@ -278,7 +287,15 @@ sleep(Timeout) ->
 % for an example of the above, see driver:drive0/1.
 
 start(Fun) ->
-  start([], Fun).
+  case start([], Fun) of
+    L when is_list(L) ->
+      L;
+    Other ->
+      io:format
+	("bad return value ~p from start~n",
+	 [Other]),
+      throw(bad)
+  end.
 
 %% @doc Executing the function argument with the configured parameters.
 %%
@@ -365,7 +382,7 @@ start(Config,Fun) ->
 
   TimeParms =
     case lists:keysearch(timeParms,1,Config) of
-      {value, {timeParms, TP}} -> PreTimeParms++TP  ;
+      {value, {timeParms, TP}} -> TP++PreTimeParms  ;
       _ -> PreTimeParms
     end,
 
@@ -457,6 +474,8 @@ schedule(State) ->
 	  print(Verbose,"unblocking non-timeout process ~p~n",[name(State,Pid)]),
 	  unblockProcess(Pid,State1);
 	true ->
+	  ReallyWait =
+	    timeParmValue(really_wait,State,true),
 	  TimeoutJitter =
 	    timeParmValue(timeoutJitter,State,0),
 	  RawTimeouts = 
@@ -512,6 +531,12 @@ schedule(State) ->
 		    end;
 		  true -> tmax(0,Timeout)
 		end,
+	      if
+		ReallyWait, WaitTime>0 ->
+		  timer:sleep(WaitTime div 1000);
+		true ->
+		  ok
+	      end,
 	      print
 		(Verbose,
 		 "TimeoutProcess=~p Timeout=~p WaitTime=~p~n",
@@ -684,23 +709,24 @@ runProcess(Pid,PreState) ->
       runProcess(Pid,State);
 
     {monitor, Pid2, Ref} when is_pid(Pid2), Pid /= Pid2 ->
-	   event(State,{monitor, name(State,Pid), name(State,Pid2),Ref}),
-	   case lists:member(Pid2, State#state.actives ++ State#state.blocks) of
+      event(State,{monitor, name(State,Pid), name(State,Pid2),Ref}),
+      case lists:member(Pid2, State#state.actives ++ State#state.blocks) of
 
-		   true  -> runProcess(Pid,
-							   State#state{monitors = 
-										   [{Pid,Pid2,Ref} | State#state.monitors]}
-							  );
-		   false -> event(State,{send,name(State,Pid2),
-								 {'DOWN',Ref,process,Pid,noproc},
-								 name(State,Pid)}),
-					runProcess(Pid,
-							   State#state{queues = 
-										   sendOff(Pid2,Pid,
-												   {msg,{'DOWN',Ref,process,Pid2,noproc}},
-												   State#state.queues)}
-							  )
-	   end;
+	true  -> runProcess
+		   (Pid,
+		    State#state{monitors = 
+				  [{Pid,Pid2,Ref} | State#state.monitors]}
+		   );
+	false -> event(State,{send,name(State,Pid2),
+			      {'DOWN',Ref,process,Pid,noproc},
+			      name(State,Pid)}),
+		 runProcess(Pid,
+			    State#state{queues = 
+					  sendOff(Pid2,Pid,
+						  {msg,{'DOWN',Ref,process,Pid2,noproc}},
+						  State#state.queues)}
+			   )
+      end;
 
     % process flag
     {trap_exit, Value} ->
@@ -1041,7 +1067,7 @@ instrumented() ->
      {erlang, monitor, []},
      {erlang, exit, [yield]},
      {erlang, is_process_alive, [dont_capture,yield]},
-	 {timer, sleep, []},
+%%     {timer, sleep, []},
      {io, format, [dont_capture]},
      {ets, lookup, [dont_capture, yield]},
      {ets, insert, [dont_capture, yield]},
@@ -1073,6 +1099,11 @@ instrumented() ->
      {gen_server, call, [{replace_with, mce_erl_gen_server, call}]},
      {gen_server, cast, [{replace_with, mce_erl_gen_server, cast}]},
      {gen_server, server, [{replace_with, mce_erl_gen_server, server}]},
-     {gen_server, loop, [{replace_with, mce_erl_gen_server, loop}]}].
+     {gen_server, loop, [{replace_with, mce_erl_gen_server, loop}]}
+
+     ,{timer, apply_after, [{replace_with, mce_erl_timer, apply_after}]}
+     ,{timer, sleep, [{replace_with, mce_erl_timer, sleep}]}
+
+    ].
 
 % ----------------------------------------------------------------
